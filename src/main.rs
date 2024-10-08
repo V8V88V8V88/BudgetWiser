@@ -1,179 +1,279 @@
-use clap::{Arg, Command};
+use clap::{Command};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
+use chrono::{DateTime, Local, NaiveDate};
+use std::error::Error;
+use csv;
 
-#[derive(Serialize, Deserialize, Debug)]
-struct FinanceRecord {
-    income: f64,
-    expenses: Vec<Expense>,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+enum ExportFormat {
+    CSV,
+    JSON,
+    PDF,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Expense {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+enum ImportFormat {
+    CSV,
+    JSON,
+    QIF,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ForecastedExpense {
+    date: NaiveDate,
     category: String,
     amount: f64,
+    confidence: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct TransactionDetail {
+    date: DateTime<Local>,
+    description: String,
+    amount: f64,
+    category: String,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Chart {
+    chart_type: ChartType,
+    title: String,
+    data: Vec<(String, f64)>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+enum ChartType {
+    Bar,
+    Pie,
+    Line,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct BudgetStatus {
+    allocated: f64,
+    spent: f64,
+    remaining: f64,
+    percentage_used: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Trend {
+    category: String,
+    period: String,
+    change_percentage: f32,
+    direction: TrendDirection,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+enum TrendDirection {
+    Up,
+    Down,
+    Stable,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Recommendation {
+    category: String,
+    suggestion: String,
+    potential_savings: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Anomaly {
+    transaction_date: DateTime<Local>,
+    category: String,
+    amount: f64,
+    description: String,
+    confidence_score: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Income {
+    date: DateTime<Local>,
+    category: String,
+    amount: f64,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Expense {
+    date: DateTime<Local>,
+    category: String,
+    amount: f64,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Budget {
+    category: String,
+    allocated: f64,
+    spent: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct RecurringTransaction {
+    date: DateTime<Local>,
+    category: String,
+    amount: f64,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Category {
+    name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct FinanceRecord {
+    income_sources: Vec<Income>,
+    expenses: Vec<Expense>,
+    budgets: Vec<Budget>,
+    recurring_transactions: Vec<RecurringTransaction>,
+    categories: Vec<Category>,
+    tags: Vec<String>,
 }
 
 impl FinanceRecord {
-    fn new() -> Self {
-        FinanceRecord {
-            income: 0.0,
-            expenses: Vec::new(),
-        }
-    }
-
-    fn add_income(&mut self, amount: f64) {
-        self.income += amount;
-    }
-
-    fn add_expense(&mut self, category: &str, amount: f64) {
-        self.expenses.push(Expense {
-            category: category.to_string(),
-            amount,
-        });
-    }
-
-    fn remove_expense(&mut self, category: &str) {
-        self.expenses.retain(|e| e.category != category);
+    fn total_income(&self) -> f64 {
+        self.income_sources.iter().map(|i| i.amount).sum()
     }
 
     fn total_expenses(&self) -> f64 {
         self.expenses.iter().map(|e| e.amount).sum()
     }
+}
 
-    fn net_income(&self) -> f64 {
-        self.income - self.total_expenses()
-    }
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    data_dir: PathBuf,
+    backup_enabled: bool,
+    export_format: ExportFormat,
+}
 
-    fn list_expenses(&self) {
-        if self.expenses.is_empty() {
-            println!("No expenses recorded.");
-            return;
-        }
-        println!("=== Expenses ===");
-        for expense in &self.expenses {
-            println!("{} - ${:.2}", expense.category, expense.amount);
-        }
-    }
-
-    fn clear_data(&mut self) {
-        self.income = 0.0;
-        self.expenses.clear();
-    }
-
-    fn summary_by_category(&self) {
-        let mut category_summary = std::collections::HashMap::new();
-        for expense in &self.expenses {
-            *category_summary.entry(&expense.category).or_insert(0.0) += expense.amount;
-        }
-
-        println!("=== Summary by Category ===");
-        for (category, total) in category_summary {
-            println!("{} - ${:.2}", category, total);
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            data_dir: PathBuf::from("/path/to/data"),
+            backup_enabled: true,
+            export_format: ExportFormat::JSON,
         }
     }
 }
 
-fn load_data() -> FinanceRecord {
-    let path = "finance_data.json";
-    if Path::new(path).exists() {
-        let data = fs::read_to_string(path).expect("Unable to read file");
-        serde_json::from_str(&data).expect("JSON was not well-formatted")
+fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    let config_path = PathBuf::from("./config.json");
+    if config_path.exists() {
+        let data = fs::read_to_string(config_path)?;
+        Ok(serde_json::from_str(&data)?)
     } else {
-        FinanceRecord::new()
+        let config = Config::default();
+        let json = serde_json::to_string_pretty(&config)?;
+        fs::write(config_path, json)?;
+        Ok(config)
     }
 }
 
-fn save_data(record: &FinanceRecord) {
-    let json = serde_json::to_string(record).expect("Failed to serialize data");
-    let mut file = File::create("finance_data.json").expect("Unable to create file");
-    file.write_all(json.as_bytes()).expect("Unable to write data");
+fn load_data(config: &Config) -> Result<FinanceRecord, Box<dyn std::error::Error>> {
+    let data_path = config.data_dir.join("finance_data.json");
+    if data_path.exists() {
+        let data = fs::read_to_string(data_path)?;
+        Ok(serde_json::from_str(&data)?)
+    } else {
+        Ok(FinanceRecord {
+            income_sources: vec![],
+            expenses: vec![],
+            budgets: vec![],
+            recurring_transactions: vec![],
+            categories: vec![],
+            tags: vec![],
+        })
+    }
+}
+
+fn save_data(record: &FinanceRecord, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let data_path = config.data_dir.join("finance_data.json");
+    if config.backup_enabled {
+        let backup_path = config.data_dir.join("finance_data.backup.json");
+        fs::copy(&data_path, backup_path)?;
+    }
+    let json = serde_json::to_string_pretty(record)?;
+    fs::write(data_path, json)?;
+    Ok(())
+}
+
+fn handle_income_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+fn handle_expense_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+fn handle_budget_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+fn handle_report_command(_matches: &clap::ArgMatches, _record: &FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+fn handle_analysis_command(_matches: &clap::ArgMatches, _record: &FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+fn handle_export_command(_matches: &clap::ArgMatches, _record: &FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+fn handle_import_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
 }
 
 fn main() {
-    let matches = Command::new("BudgetWise")
-        .version("1.0")
-        .author("Your Name")
-        .about("Track your income and expenses")
-        .arg(Arg::new("add_income")
-            .short('i')
-            .long("income")
-            .value_name("AMOUNT")
-            .help("Add an income amount")
-            .required(false))
-        .arg(Arg::new("add_expense")
-            .short('e')
-            .long("expense")
-            .value_name("CATEGORY,AMOUNT")
-            .help("Add an expense in the format 'category,amount'")
-            .required(false))
-        .arg(Arg::new("remove_expense")
-            .short('r')
-            .long("remove")
-            .value_name("CATEGORY")
-            .help("Remove an expense by category")
-            .required(false))
-        .arg(Arg::new("list_expenses")
-            .short('l')
-            .long("list")
-            .help("List all recorded expenses")
-            .required(false))
-        .arg(Arg::new("clear")
-            .short('c')
-            .long("clear")
-            .help("Clear all data")
-            .required(false))
-        .arg(Arg::new("summary")
-            .short('s')
-            .long("summary")
-            .help("Show summary of expenses by category")
-            .required(false))
+    let matches = Command::new("BudgetWiser")
+        .subcommand(Command::new("income"))
+        .subcommand(Command::new("expense"))
+        .subcommand(Command::new("budget"))
+        .subcommand(Command::new("report"))
+        .subcommand(Command::new("analysis"))
+        .subcommand(Command::new("export"))
+        .subcommand(Command::new("import"))
         .get_matches();
 
-    let mut record = load_data();
-
-    if let Some(income_str) = matches.get_one::<String>("add_income") {
-        let income: f64 = income_str.parse().expect("Invalid income amount");
-        record.add_income(income);
-        println!("Added income: ${:.2}", income);
-    }
-
-    if let Some(expense_str) = matches.get_one::<String>("add_expense") {
-        let parts: Vec<&str> = expense_str.split(',').collect();
-        if parts.len() == 2 {
-            let category = parts[0]; // Use a string slice
-            let amount: f64 = parts[1].parse().expect("Invalid expense amount");
-            record.add_expense(category, amount); // Pass as a reference
-            println!("Added expense: {} - ${:.2}", category, amount);
-        } else {
-            println!("Please provide the expense in the format 'category,amount'");
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            return;
         }
+    };
+
+    let mut record = match load_data(&config) {
+        Ok(record) => record,
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            return;
+        }
+    };
+
+    if let Some(matches) = matches.subcommand_matches("income") {
+        handle_income_command(matches, &mut record).unwrap();
+    } else if let Some(matches) = matches.subcommand_matches("expense") {
+        handle_expense_command(matches, &mut record).unwrap();
+    } else if let Some(matches) = matches.subcommand_matches("budget") {
+        handle_budget_command(matches, &mut record).unwrap();
+    } else if let Some(matches) = matches.subcommand_matches("report") {
+        handle_report_command(matches, &record).unwrap();
+    } else if let Some(matches) = matches.subcommand_matches("analysis") {
+        handle_analysis_command(matches, &record).unwrap();
+    } else if let Some(matches) = matches.subcommand_matches("export") {
+        handle_export_command(matches, &record).unwrap();
+    } else if let Some(matches) = matches.subcommand_matches("import") {
+        handle_import_command(matches, &mut record).unwrap();
     }
 
-    if let Some(category) = matches.get_one::<String>("remove_expense") {
-        record.remove_expense(category);
-        println!("Removed all expenses in category: {}", category);
-    }
-
-    if matches.contains_id("list_expenses") {
-        record.list_expenses();
-    }
-
-    if matches.contains_id("clear") {
-        record.clear_data();
-        println!("All data cleared.");
-    }
-
-    if matches.contains_id("summary") {
-        record.summary_by_category();
-    }
-
-    save_data(&record);
-
-    println!("\n=== Summary ===");
-    println!("Total Income: ${:.2}", record.income);
-    println!("Total Expenses: ${:.2}", record.total_expenses());
-    println!("Net Income: ${:.2}", record.net_income());
+    save_data(&record, &config).unwrap();
 }
