@@ -1,6 +1,6 @@
-# BudgetWise
+# BudgetWiser
 
-BudgetWise is a simple command-line application written in Rust that helps you track your income and expenses. It allows you to add income and expenses, view a summary of your financial status, and store your data in a JSON file.
+BudgetWiser is a simple command-line application written in Rust that helps you track your income and expenses. It allows you to add income and expenses, view a summary of your financial status, and store your data in a JSON file.
 
 ## Features
 
@@ -23,8 +23,8 @@ BudgetWise is a simple command-line application written in Rust that helps you t
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/v8v88v8v88/BudgetWise.git
-   cd BudgetWise
+   git clone https://github.com/v8v88v8v88/BudgetWiser.git
+   cd BudgetWiser
    ```
 
 2. Build the project:
@@ -35,7 +35,7 @@ BudgetWise is a simple command-line application written in Rust that helps you t
 
 ## Usage
 
-You can run BudgetWise with the following commands:
+You can run BudgetWiser with the following commands:
 
 ### Add Income
 
