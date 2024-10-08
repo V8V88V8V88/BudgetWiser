@@ -1,10 +1,8 @@
 use clap::{Command};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
 use chrono::{DateTime, Local, NaiveDate};
-use std::error::Error;
-use csv;
+use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 enum ExportFormat {
