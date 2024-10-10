@@ -1,8 +1,10 @@
 use clap::{Command};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, File};
 use chrono::{DateTime, Local, NaiveDate};
 use std::path::PathBuf;
+use bincode;
+use rayon::prelude::*;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 enum ExportFormat {
@@ -105,101 +107,30 @@ struct Expense {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct Budget {
-    category: String,
-    allocated: f64,
-    spent: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct RecurringTransaction {
-    date: DateTime<Local>,
-    category: String,
-    amount: f64,
-    tags: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Category {
-    name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 struct FinanceRecord {
-    income_sources: Vec<Income>,
+    incomes: Vec<Income>,
     expenses: Vec<Expense>,
-    budgets: Vec<Budget>,
-    recurring_transactions: Vec<RecurringTransaction>,
-    categories: Vec<Category>,
-    tags: Vec<String>,
 }
 
-impl FinanceRecord {
-    fn total_income(&self) -> f64 {
-        self.income_sources.iter().map(|i| i.amount).sum()
-    }
-
-    fn total_expenses(&self) -> f64 {
-        self.expenses.iter().map(|e| e.amount).sum()
-    }
+fn load_data(path: &str) -> Result<FinanceRecord, Box<dyn std::error::Error>> {
+    let file = File::open(path)?;
+    let record: FinanceRecord = bincode::deserialize_from(file)?;
+    Ok(record)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Config {
-    data_dir: PathBuf,
-    backup_enabled: bool,
-    export_format: ExportFormat,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            data_dir: PathBuf::from("/path/to/data"),
-            backup_enabled: true,
-            export_format: ExportFormat::JSON,
-        }
-    }
-}
-
-fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
-    let config_path = PathBuf::from("./config.json");
-    if config_path.exists() {
-        let data = fs::read_to_string(config_path)?;
-        Ok(serde_json::from_str(&data)?)
-    } else {
-        let config = Config::default();
-        let json = serde_json::to_string_pretty(&config)?;
-        fs::write(config_path, json)?;
-        Ok(config)
-    }
-}
-
-fn load_data(config: &Config) -> Result<FinanceRecord, Box<dyn std::error::Error>> {
-    let data_path = config.data_dir.join("finance_data.json");
-    if data_path.exists() {
-        let data = fs::read_to_string(data_path)?;
-        Ok(serde_json::from_str(&data)?)
-    } else {
-        Ok(FinanceRecord {
-            income_sources: vec![],
-            expenses: vec![],
-            budgets: vec![],
-            recurring_transactions: vec![],
-            categories: vec![],
-            tags: vec![],
-        })
-    }
-}
-
-fn save_data(record: &FinanceRecord, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-    let data_path = config.data_dir.join("finance_data.json");
-    if config.backup_enabled {
-        let backup_path = config.data_dir.join("finance_data.backup.json");
-        fs::copy(&data_path, backup_path)?;
-    }
-    let json = serde_json::to_string_pretty(record)?;
-    fs::write(data_path, json)?;
+fn save_data(record: &FinanceRecord, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create(path)?;
+    bincode::serialize_into(file, record)?;
     Ok(())
+}
+
+fn process_transactions_parallel(record: &mut FinanceRecord) {
+    record.incomes.par_iter_mut().for_each(|income| {
+        income.amount *= 1.01; // Simulate some processing
+    });
+    record.expenses.par_iter_mut().for_each(|expense| {
+        expense.amount *= 1.01; // Simulate some processing
+    });
 }
 
 fn handle_income_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
@@ -241,21 +172,15 @@ fn main() {
         .subcommand(Command::new("import"))
         .get_matches();
 
-    let config = match load_config() {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("Error: {}", err);
-            return;
-        }
-    };
-
-    let mut record = match load_data(&config) {
+    let mut record = match load_data("data.bin") {
         Ok(record) => record,
         Err(err) => {
             eprintln!("Error: {}", err);
             return;
         }
     };
+
+    process_transactions_parallel(&mut record);
 
     if let Some(matches) = matches.subcommand_matches("income") {
         handle_income_command(matches, &mut record).unwrap();
@@ -273,5 +198,5 @@ fn main() {
         handle_import_command(matches, &mut record).unwrap();
     }
 
-    save_data(&record, &config).unwrap();
+    save_data(&record, "data.bin").unwrap();
 }
