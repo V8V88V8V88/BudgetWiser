@@ -1,10 +1,10 @@
-use clap::{Command};
+use bincode;
+use chrono::{DateTime, Local, NaiveDate};
+use clap::Command;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use chrono::{DateTime, Local, NaiveDate};
 use std::path::PathBuf;
-use bincode;
-use rayon::prelude::*;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 enum ExportFormat {
@@ -113,9 +113,18 @@ struct FinanceRecord {
 }
 
 fn load_data(path: &str) -> Result<FinanceRecord, Box<dyn std::error::Error>> {
-    let file = File::open(path)?;
-    let record: FinanceRecord = bincode::deserialize_from(file)?;
-    Ok(record)
+    if !std::path::Path::new(path).exists() {
+        let record = FinanceRecord {
+            incomes: Vec::new(),
+            expenses: Vec::new(),
+        };
+        save_data(&record, path)?;
+        Ok(record)
+    } else {
+        let file = File::open(path)?;
+        let record: FinanceRecord = bincode::deserialize_from(file)?;
+        Ok(record)
+    }
 }
 
 fn save_data(record: &FinanceRecord, path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -133,31 +142,52 @@ fn process_transactions_parallel(record: &mut FinanceRecord) {
     });
 }
 
-fn handle_income_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_income_command(
+    _matches: &clap::ArgMatches,
+    _record: &mut FinanceRecord,
+) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_expense_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_expense_command(
+    _matches: &clap::ArgMatches,
+    _record: &mut FinanceRecord,
+) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_budget_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_budget_command(
+    _matches: &clap::ArgMatches,
+    _record: &mut FinanceRecord,
+) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_report_command(_matches: &clap::ArgMatches, _record: &FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_report_command(
+    _matches: &clap::ArgMatches,
+    _record: &FinanceRecord,
+) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_analysis_command(_matches: &clap::ArgMatches, _record: &FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_analysis_command(
+    _matches: &clap::ArgMatches,
+    _record: &FinanceRecord,
+) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_export_command(_matches: &clap::ArgMatches, _record: &FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_export_command(
+    _matches: &clap::ArgMatches,
+    _record: &FinanceRecord,
+) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_import_command(_matches: &clap::ArgMatches, _record: &mut FinanceRecord) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_import_command(
+    _matches: &clap::ArgMatches,
+    _record: &mut FinanceRecord,
+) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
