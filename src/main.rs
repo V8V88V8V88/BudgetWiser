@@ -4,7 +4,6 @@ use clap::Command;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 enum ExportFormat {
