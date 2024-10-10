@@ -3,7 +3,7 @@ use chrono::{DateTime, Local, NaiveDate};
 use clap::Command;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
+use std::fs::{File};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 enum ExportFormat {
